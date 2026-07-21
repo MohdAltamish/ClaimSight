@@ -133,9 +133,11 @@ ClaimSight makes this process evidence-led, structured, and reviewable.
 - **Frontend:** Next.js app — claim workspace, intake assistant, admin console
 - **API routes:** server-side AI calls (keys never reach the browser),
   workspace lifecycle, exports, admin endpoints
-- **AI layer:** Gemini 2.5 Flash for vision extraction, policy parsing, the
-  claim guide, and conversational intake; deterministic TypeScript for all
-  pricing math, gap comparisons, and exports
+- **AI layer:** Google Gemini 2.5 Flash by default for vision extraction,
+  policy parsing, the claim guide, and conversational intake. Administrators
+  can optionally activate an OpenAI GPT-5.6 model after securely configuring
+  its provider key; deterministic TypeScript handles all pricing math, gap
+  comparisons, and exports.
 - **Persistence:** Supabase (server-role only) for anonymous-job persistence;
   fully functional locally without it (sample claim + guided intake)
 - **Key management:** the AI API key is verified before saving, encrypted at
@@ -146,7 +148,7 @@ ClaimSight makes this process evidence-led, structured, and reviewable.
 | Layer | Technology |
 |---|---|
 | Framework | Next.js (App Router), TypeScript |
-| AI | Gemini 2.5 Flash (vision, parsing, chat) |
+| AI | Gemini 2.5 Flash by default; optional OpenAI GPT-5.6 family |
 | Persistence | Supabase (Postgres, service-role server-only) |
 | Exports | Server-generated CSV and PDF |
 | Testing | Unit tests (pricing, guided intake), `tsc`, production build |
@@ -159,7 +161,7 @@ ClaimSight makes this process evidence-led, structured, and reviewable.
 - Node.js 20+
 - npm
 - *(Optional, for live AI)* Supabase project + a Gemini API key managed via
-  the admin console
+  the admin console. OpenAI is optional and can be configured later.
 
 ### Local setup
 
@@ -182,7 +184,7 @@ Open [http://localhost:3000](http://localhost:3000).
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Hosted persistence | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Hosted persistence | Server-only anonymous-job persistence |
-| `CLAIMSIGHT_CONFIG_ENCRYPTION_KEY` | AI admin settings | Base64url-encoded 32-byte server secret encrypting the stored AI API key |
+| `CLAIMSIGHT_CONFIG_ENCRYPTION_KEY` | AI admin settings | Base64url-encoded 32-byte server secret encrypting stored provider keys and runtime selection |
 | `CRON_SECRET` | Production | Protects the workspace-expiry cleanup route |
 | `CLAIMSIGHT_ADMIN_KEY` | Admin console | Protects the human-review queue and AI key controls |
 
@@ -191,8 +193,10 @@ Open [http://localhost:3000](http://localhost:3000).
 1. Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL editor.
 2. Set `CLAIMSIGHT_CONFIG_ENCRYPTION_KEY` and `CLAIMSIGHT_ADMIN_KEY` in the
    deployment environment.
-3. Open `/admin` and save the AI API key. It is verified before saving,
-   encrypted in Supabase, and never sent back to the browser.
+3. Open `/admin`, save the Gemini API key, and activate `gemini-2.5-flash`.
+   It is verified before saving, encrypted in Supabase, and never sent back to
+   the browser. You can later add an OpenAI key and select an allowed GPT-5.6
+   model without changing deployment variables.
 
 Service-role credentials and encryption secrets are never exposed to the client.
 
@@ -204,6 +208,18 @@ Deploy to Vercel (recommended) or any Node 20+ host:
 2. Configure the cron/cleanup route with `CRON_SECRET` for 24-hour workspace
    expiry.
 3. Verify `/admin` access with `CLAIMSIGHT_ADMIN_KEY` and save the AI key.
+
+### Production readiness checklist
+
+- [x] GitHub repository connected to Vercel
+- [ ] Run [`supabase/schema.sql`](supabase/schema.sql) against the production
+  Supabase project.
+- [ ] Add the Supabase URL, server-only service-role key, encryption key,
+  admin key, and cron secret to Vercel for Production and Preview.
+- [ ] Deploy, sign in at `/admin`, and confirm the protected status reads
+  **“Supabase: connected and schema ready.”**
+- [ ] Save and activate the Gemini key in `/admin`; live analysis remains in
+  demo mode until a provider key is configured.
 
 ## Demo Path for Judges
 
@@ -220,18 +236,50 @@ No setup or keys required for steps 1–6:
    temporary workspace.
 7. *(With admin key)* open `/admin` to see the human-review complaint queue.
 
-- **Hosted demo:** `[URL — TODO]`
+- **Hosted demo:** [https://claimsight-delta.vercel.app](https://claimsight-delta.vercel.app)
 - **Demo video:** `[YouTube link — TODO]`
 
 ## How Codex Was Used
 
-> ClaimSight was built with Codex (GPT-5.6) as the primary engineering agent.
+ClaimSight was built end-to-end with **Codex (powered by GPT-5.6)** acting as
+our primary engineering agent, directed through a detailed project prompt.
+Add the final `PROMPT.md` spec before submission if you want to reference that
+file directly here.
 
-- **Full-stack scaffolding and architecture:** Codex designed and implemented the entire Next.js App Router project from scratch — the claim workspace, all 20+ API routes, the multi-language i18n system (English, Hindi, Spanish, German), and the Supabase persistence layer with encrypted key management. It authored every TypeScript file in the repository.
-- **Unified inventory schema:** Codex converged the vision-based extraction path and the conversational no-video intake onto a single `InventoryItem` schema with confidence scoring and evidence references, ensuring both pathways produce identically structured, reviewable output.
-- **Deterministic pricing and gap-report engines:** Codex built the catalog-based pricing engine (RCV/ACV range estimation with depreciation curves) and the coverage-gap analysis that compares priced category totals against parsed policy sub-limits — all in pure TypeScript with no AI in the loop, along with comprehensive unit tests.
-- **Key decisions Codex drove:** converging all intake methods on one inventory schema to avoid data-model fragmentation; encrypting the AI key server-side with AES-256-GCM rather than storing it in plaintext; building a human-review-only admin console with regulator dispatch and email sending intentionally disabled; implementing the conversational intake agent with structured JSON output and intake-state patching; and designing the fallback system so the entire demo flow works offline without any API keys.
-- **Where Codex accelerated us most:** PDF export generation with server-side rendering, the multi-step claim journey tracker, correspondence classification prompt engineering, the admin console with encrypted AI settings management, the policy parser that extracts exact quotes with page references, and the complete test suite covering pricing math, encryption round-trips, and Gemini client mocking.
+### Where Codex accelerated the build
+
+- **Scaffolding & architecture:** Codex scaffolded the Next.js App Router
+  workspace, the server-side AI routes, and the Supabase persistence layer
+  with encrypted key storage.
+- **The single-schema decision:** Codex proposed converging all intake methods
+  (vision, conversational, and manual edits) on one inventory schema — the
+  single most important architectural decision in the project. Pricing, gap
+  analysis, and exports work unchanged across every intake mode.
+- **Deterministic engines:** Codex implemented the pricing engine (catalog
+  matching and ACV depreciation), the coverage-gap comparisons, and the
+  CSV/PDF exporters as pure, unit-tested TypeScript.
+- **Fallback design:** Codex built the zero-key demo path (a synthetic sample
+  claim) so the full experience runs without any API configuration.
+
+### Key decisions made with Codex
+
+- Keeping **unknown** as a first-class value in vision extraction (anti-fraud)
+- Requiring direct quotes and page references for every policy finding
+- A human-review-only complaint queue with dispatch intentionally disabled
+- Anonymous 24-hour workspaces instead of user accounts
+
+### GPT-5.6 at runtime
+
+Google Gemini 2.5 Flash is the default live provider for vision inventory
+extraction, policy parsing, Claim Guide, and conversational intake. An
+administrator can optionally activate **GPT-5.6**, **GPT-5.6 Terra**, or
+**GPT-5.6 Luna** in the protected admin panel; the selected OpenAI model then
+powers those same four structured-output workflows. Gemini remains available
+and requires no OpenAI key.
+
+### Codex session
+
+- **/feedback session ID:** `<PASTE-YOUR-SESSION-ID>`
 
 ## Safety Principles
 
